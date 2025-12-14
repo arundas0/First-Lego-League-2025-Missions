@@ -11,7 +11,7 @@ from pybricks.parameters import Color
 # -----------------------------
 WHEEL_RADIUS_CM = 3.175
 WHEEL_DIAMETER_MM = WHEEL_RADIUS_CM * 2 * 10  # cm -> mm
-AXLE_TRACK_MM = 140  # IMPORTANT: set this to your real wheel-to-wheel distance
+AXLE_TRACK_MM = 139  # IMPORTANT: set this to your real wheel-to-wheel distance
 
 hub = PrimeHub()
 
@@ -23,9 +23,6 @@ robot = DriveBase(left_motor, right_motor, WHEEL_DIAMETER_MM, AXLE_TRACK_MM)
 # Attachment motors
 motor_c = Motor(Port.C)
 motor_d = Motor(Port.D)
-
-# Sensor (Mission 2 used color sensor on F in SPIKE code)
-#color_f = ColorSensor(Port.F)
 
 # -----------------------------
 # Shared helpers
@@ -40,8 +37,9 @@ def beep_mission(n):
         wait(80)
 
 def emergency_stop_check():
-    # Bluetooth button = stop anytime
-    if Button.BLUETOOTH in hub.buttons.pressed():
+    # CENTER button = stop anytime
+    # (Bluetooth is used to START a mission; use CENTER to stop/emergency)
+    if Button.CENTER in hub.buttons.pressed():
         robot.stop()
         left_motor.stop()
         right_motor.stop()
@@ -67,24 +65,18 @@ def drive_cm(distance_cm, velocity_cm_s, acceleration_cm_s2, stop=Stop.HOLD):
     robot.stop()  # DriveBase stop uses internal behavior; motors also hold by default
 
 def run_motor_for_degrees(m: Motor, degrees: int, speed: int, accel: int = 1000, stop=Stop.HOLD):
-    """
-    SPIKE's run_for_degrees(deg, speed, accel, BRAKE) -> Pybricks equivalent.
-    speed in deg/s, degrees in deg.
-    """
+
     # Note: Motor.run_angle(speed, rotation_angle) is blocking.
     m.run_angle(speed, degrees, then=stop, wait=True)
 
 def gyro_turn(target_deg, slow_turn=False):
-    """
-    Gyro-based turn like your SPIKE motion_sensor loops.
-    Positive = left, Negative = right.
-    """
+    
     # PrimeHub IMU heading is degrees. Reset to 0.
     hub.imu.reset_heading(0)
     wait(150)
 
     # Tune these for your robot
-    speed = 200 if slow_turn else 400
+    speed = 100 if slow_turn else 400
     power = 40 if slow_turn else 60  # used as a coarse steer factor
 
     # We’ll spin in place by running motors opposite directions.
@@ -274,7 +266,6 @@ MISSION_COLORS = [
     Color.BLUE,    # Mission 4
     Color.BLACK,  # Mission 5
 ]
-START_HOLD_MS = 2000   # hold RIGHT for 2 seconds to start
 POLL_MS = 50
 def set_mission_light(index):
     hub.light.on(MISSION_COLORS[index])
@@ -305,7 +296,7 @@ def show_selection(index):
     name = MISSIONS[index][0]
     print("Selected:", name)
     set_mission_light(index)
-    beep_selection(index)
+    #beep_selection(index)
 
 def wait_release_all():
     while any(b in hub.buttons.pressed() for b in [Button.LEFT, Button.RIGHT, Button.CENTER]):
@@ -315,8 +306,7 @@ def main():
     selected = 0
     print("READY.")
     print("LEFT/RIGHT = choose Mission 0–5")
-    print("HOLD RIGHT (2s) = START")
-    print("BLUETOOTH = STOP")
+    print("BLUETOOTH = START immediately")
 
     show_selection(selected)
 
@@ -326,42 +316,38 @@ def main():
         emergency_stop_check()
         pressed = hub.buttons.pressed()
 
-        # ---------- RIGHT button logic ----------
-        if Button.RIGHT in pressed:
-            right_hold_time += POLL_MS
+        # Bluetooth button = immediate START (press to run selected mission)
+        if Button.BLUETOOTH in pressed:
+            name, fn = MISSIONS[selected]
+            print("STARTING (Bluetooth):", name)
+            hub.speaker.beep(1000, 200)
+            hub.light.on(Color.WHITE)   # running indicator
+            wait(200)
 
-            # START if held long enough
-            if right_hold_time >= START_HOLD_MS:
-                name, fn = MISSIONS[selected]
-                print("STARTING:", name)
-                hub.speaker.beep(1000, 200)
-                hub.light.on(Color.WHITE)   # running indicator
-                wait(200)
+            try:
+                fn()
+                hub.speaker.beep(600, 150)  # done
+            except Exception as e:
+                print("Error:", e)
+                hub.speaker.beep(200, 500)
 
-                try:
-                    fn()
-                    hub.speaker.beep(600, 150)  # done
-                except Exception as e:
-                    print("Error:", e)
-                    hub.speaker.beep(200, 500)
-
-                # Reset after mission
-                right_hold_time = 0
-                set_mission_light(selected)
-                show_selection(selected)
-
-                # Wait until RIGHT is released
-                while Button.RIGHT in hub.buttons.pressed():
-                    wait(20)
-
-                continue
-
-        else:
-            # RIGHT released before 2s → treat as tap
-            if right_hold_time > 0:
-                selected = (selected + 1) % len(MISSIONS)
-                show_selection(selected)
+            # Reset after mission
             right_hold_time = 0
+            set_mission_light(selected)
+            show_selection(selected)
+
+            # Wait until Bluetooth is released to avoid repeated starts
+            while Button.BLUETOOTH in hub.buttons.pressed():
+                wait(20)
+
+            continue
+
+        # ---------- RIGHT button logic(tap only) ----------
+        if Button.RIGHT in pressed:
+            selected = (selected + 1) % len(MISSIONS)
+            show_selection(selected)
+            while Button.RIGHT in hub.buttons.pressed():
+                wait(20)
 
         # ---------- LEFT button (tap only) ----------
         if Button.LEFT in pressed:
