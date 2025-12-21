@@ -54,69 +54,97 @@ def setup_drive():
     robot.settings(straight_speed=300, straight_acceleration=300)
     beep_ok()
 
-def gyro_turn(target_angle: float, mode: str = "medium", axle_turn: bool = True):
+def gyro_turn(target_angle: float,
+              mode: str = "medium",
+              settle_tol: float = 2.0,
+              settle_timeout_ms: int = 1500):
     """
-    Turn the robot using the gyro with preset speed modes.
+    Hybrid turn:
+      1) DriveBase robot.turn() does most of the turn (repeatable).
+      2) IMU settle loop corrects final error (accurate).
 
-    Args:
-        target_angle: desired turn in degrees (+ right, - left)
-        mode: 'slow', 'medium', or 'fast'
-        axle_turn: True for single-axle scaling, False for wider turn scaling
+    target_angle: + right, - left
+    mode: "slow" | "medium" | "fast"
+    settle_tol: final tolerance in degrees
     """
-    speeds = {
-        "error_correction": 25,
-        "slow": 100,
-        "medium": 150,
-        "fast": 200,
+
+    # Turn speed profiles (deg/s) for DriveBase
+    turn_rates = {
+        "slow": 80,
+        "medium": 120,
+        "fast": 180,
     }
-    speed = speeds.get(mode, 200)
-    axle = 1 if axle_turn else 3
+    turn_rate = turn_rates.get(mode, 120)
 
-    # Reset gyro angle
+    # IMU nudge speeds (motor run speed)
+    nudge_speed = {
+        "slow": 60,
+        "medium": 75,
+        "fast": 90,
+    }.get(mode, 75)
+
+    # How much of the turn we trust DriveBase to do before IMU settle
+    # (leave a small margin so robot.turn doesn't overshoot and fight the settle loop)
+    settle_margin = {
+        "slow": 6,
+        "medium": 8,
+        "fast": 12,
+    }.get(mode, 8)
+
+    # --- Prep ---
+    emergency_stop_check()
     hub.imu.reset_heading(0)
-    start_angle = hub.imu.heading()
-    print(f"[gyro_turn] Start angle: {start_angle}, target: {target_angle}, speed: {speed}")
+    wait(50)
 
-    # Decide turn direction and start motors
-    if target_angle > 0:
-        left_motor.run(axle * speed)
-        right_motor.run(-speed)
-    else:
-        left_motor.run(-speed)
-        right_motor.run(axle * speed)
+    # Configure DriveBase turning speed (this affects robot.turn)
+    # Keep your straight settings unchanged; just set turn_rate.
+    # If you want you can also pass turn_acceleration here.
+    robot.settings(turn_rate=turn_rate)
 
-    # Keep turning until target reached
-    while abs(hub.imu.heading()) < abs(target_angle):
-        wait(10)
+    # --- Phase A: bulk turn with DriveBase ---
+    bulk = target_angle
 
-    # Stop motors
-    left_motor.stop()
-    right_motor.stop()
+    # Leave a margin for IMU settling
+    if abs(target_angle) > settle_margin:
+        bulk = target_angle - (settle_margin if target_angle > 0 else -settle_margin)
 
-    print(f"[gyro_turn] without correction angle: {hub.imu.heading()}")
-    end_angle = hub.imu.heading()
+    robot.turn(bulk)
 
-    # Optional fine correction
-    error = target_angle - end_angle
-    if abs(error) > 2:  # tolerance in degrees
-        correction_speed = speeds["error_correction"]
+    # --- Phase B: IMU settle (fine correction) ---
+    sw = StopWatch()
+    sw.reset()
 
-        if error > 0:
-            left_motor.run(correction_speed)
-            right_motor.run(-correction_speed)
-            wait(10)
+    def set_nudge(sign: int):
+        # sign = +1 means turn right; -1 means turn left
+        if sign > 0:
+            left_motor.run(nudge_speed)
+            right_motor.run(-nudge_speed)
         else:
-            left_motor.run(-correction_speed)
-            right_motor.run(correction_speed)
-            wait(10)
+            left_motor.run(-nudge_speed)
+            right_motor.run(nudge_speed)
 
-        while abs(hub.imu.heading() - target_angle) > 2:
-            wait(10)
+    # Pulse-based settle is more stable than continuous run (less overshoot)
+    while True:
+        emergency_stop_check()
 
+        h = hub.imu.heading()
+        err = target_angle - h
+
+        if abs(err) <= settle_tol:
+            break
+
+        if sw.time() > settle_timeout_ms:
+            # give up but stop safely
+            break
+
+        set_nudge(1 if err > 0 else -1)
+        wait(20)
         left_motor.stop()
         right_motor.stop()
+        wait(30)
 
-        print(f"[gyro_turn] Corrected final angle: {hub.imu.heading()}")
+    left_motor.stop()
+    right_motor.stop()
 
 
 def drive_cm(distance_cm, velocity_cm_s, acceleration_cm_s2, stop=Stop.HOLD):
@@ -127,7 +155,7 @@ def drive_cm(distance_cm, velocity_cm_s, acceleration_cm_s2, stop=Stop.HOLD):
 
     robot.settings(straight_speed=speed_mm_s, straight_acceleration=accel_mm_s2)
     robot.straight(distance_mm)
-    robot.stop()  # DriveBase stop uses internal behavior; motors also hold by default
+    #robot.stop()  # DriveBase stop uses internal behavior; motors also hold by default
 
 def drive_cm_stall(distance_cm: float,
              velocity_cm_s: float,
@@ -148,18 +176,18 @@ def drive_cm_stall(distance_cm: float,
 
     # Start motion non-blocking so we can poll for stall
     robot.straight(distance_mm, wait=False)
-    print(f"initial postion : {getattr(robot, "stalled", False)}")
-    print("inside drice with stall")
+    # print(f"initial postion : {getattr(robot, "stalled", False)}")
+    # print("inside drice with stall")
 
     # Poll until done or stalled
     while True:
-        print("inside drice with stall while loop")
-        print(robot.stalled())
+        # print("inside drice with stall while loop")
+        # print(robot.stalled())
         # Stall is a property, not a callable
-        if robot.stalled():
-            print(robot.stalled())
+        if getattr(robot, "stalled", False):
+            # print(robot.stalled())
             # Stop the robot immediately and report failure
-            print("motor is stalled")
+            # print("motor is stalled")
             robot.stop()
             return False
 
@@ -189,7 +217,7 @@ def run_motor_for_degrees(m: Motor, degrees: int, speed: int, accel: int = 1000,
 # -----------------------------
 def mission_0():
     setup_drive()
-    print("Mission 0")
+    # print("Mission 0")
 
     hub.imu.reset_heading(0)
     wait(200)
@@ -206,7 +234,7 @@ def mission_0():
 
     run_motor_for_degrees(motor_d, -1000, 1000) # SPIKE: move_sidearm_mission9(port.D, -1000, 1000, 500)
     run_motor_for_degrees(motor_c, 50, 500) # SPIKE: move_sidearm_mission9(port.C, 100, 1000, 500)
-    print("Turn completed")
+    # print("Turn completed")
     gyro_turn(-35, mode="medium")
     drive_cm(-60, 100, 500)
     gyro_turn(-90, mode="fast")
@@ -214,7 +242,7 @@ def mission_0():
 
 def mission_1():
     setup_drive()
-    print("Mission 1")
+    # print("Mission 1")
     
     hub.imu.reset_heading(0)
     wait(200)
@@ -233,7 +261,7 @@ def mission_1():
     drive_cm(-30, 30, 100)
 def mission_2():
     setup_drive()
-    print("Mission 2")
+    # print("Mission 2")
 
     hub.imu.reset_heading(0)
     wait(200)
@@ -257,7 +285,7 @@ def mission_2():
 def mission_3():
     # This matches your “Challenge H 90” style (your Mission 3 file)
     setup_drive()
-    print("Mission 3")
+    # print("Mission 3")
 
     drive_cm(41, 10, 10)
     drive_cm(-8, 30, 15)
@@ -274,13 +302,13 @@ def mission_3():
     
 def mission_4():
     setup_drive()
-    print("Mission 4")
+    # print("Mission 4")
 
 
-    drive_cm(69, 20, 500)
-    gyro_turn(-43, mode="slow")
+    drive_cm(69, 30, 50)
+    gyro_turn(-43)
 
-    drive_cm(23, 30, 200)
+    drive_cm(21, 20, 30)
 
     # lift_arm(port.D , lift_arm_degrees=180)
     run_motor_for_degrees(motor_d, 180, 1000)
@@ -289,40 +317,44 @@ def mission_4():
     run_motor_for_degrees(motor_c, 150, 300)
     wait(1000)
     run_motor_for_degrees(motor_c, 200, 1000)
+    #motor_c.run_until_stalled(200, then=Stop.BRAKE, duty_limit=60)
 
     # lift_arm(port.C , -300 slow)
     run_motor_for_degrees(motor_c, -300, 500)
 
     drive_cm(-22, 17, 500)
-    gyro_turn(140, mode="fast")
+    gyro_turn(-120, mode="fast")
 
     drive_cm(61, 30, 500)
 
 def mission_5():
-    print("Mission 5#")
+    # print("Mission 5#")
     setup_drive()
    
     hub.imu.reset_heading(0)
     wait(200)
 
-    drive_cm(80, 30, 50)
-    gyro_turn(90, mode="slow")
+    drive_cm(79, 30, 50)
+    gyro_turn(90)
     motor_c.run_until_stalled(600, then=Stop.BRAKE, duty_limit=35)
-    drive_cm(14, 30, 50)
+    drive_cm(13, 30, 50)
     run_motor_for_degrees(motor_c, -400, 300)
-    gyro_turn(-35, mode="slow")
+    gyro_turn(45)
     motor_d.run_until_stalled(-600, then=Stop.BRAKE, duty_limit=35)
     drive_cm(18, 30, 50)
-    run_motor_for_degrees(motor_d, 400, 500)
-    gyro_turn(20, mode="fast")
+    motor_d.run_until_stalled(500, then=Stop.BRAKE, duty_limit=60)
+
+    #run_motor_for_degrees(motor_d, 200, 500)
+    gyro_turn(-20, mode="fast")
 
 def mission_6():
     setup_drive()
-    print("Mission 6")
+    drive_cm(50, 100, 50)
+    drive_cm(-50, 30, 50)
     
 def mission_7():
     setup_drive()
-    print("Mission 7")
+    # print("Mission 7")
 
 MISSION_COLORS = [
     Color.RED,     # Mission 0
@@ -332,7 +364,7 @@ MISSION_COLORS = [
     Color.BLUE,    # Mission 4
     Color.BLACK,   # Mission 5
     Color.MAGENTA, # Mission 6
-    Color.CYAN,    # Mission 7
+    Color.BROWN,    # Mission 7
 ]
 POLL_MS = 50
 def set_mission_light(index):
@@ -364,7 +396,7 @@ def beep_selection(index):
 
 def show_selection(index):
     name = MISSIONS[index][0]
-    print("Selected:", name)
+    # print("Selected:", name)
     set_mission_light(index)
     #beep_selection(index)
 
@@ -374,9 +406,9 @@ def wait_release_all():
 
 def main():
     selected = 0
-    print("READY.")
-    print("LEFT/RIGHT = choose Mission 0–5")
-    print("BLUETOOTH = START immediately")
+    # print("READY.")
+    # print("LEFT/RIGHT = choose Mission 0–5")
+    # print("BLUETOOTH = START immediately")
 
     show_selection(selected)
 
@@ -389,7 +421,7 @@ def main():
         # Bluetooth button = immediate START (press to run selected mission)
         if Button.BLUETOOTH in pressed:
             name, fn = MISSIONS[selected]
-            print("STARTING (Bluetooth):", name)
+            # print("STARTING (Bluetooth):", name)
             hub.speaker.beep(1000, 200)
             hub.light.on(Color.WHITE)   # running indicator
             wait(200)
@@ -398,7 +430,7 @@ def main():
                 fn()
                 hub.speaker.beep(600, 150)  # done
             except Exception as e:
-                print("Error:", e)
+                # print("Error:", e)
                 hub.speaker.beep(200, 500)
 
             # Reset after mission
