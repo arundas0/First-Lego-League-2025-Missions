@@ -400,6 +400,8 @@ def show_selection(index):
     name = MISSIONS[index][0]
     # print("Selected:", name)
     set_mission_light(index)
+    hub.display.char(str(index))
+
     #beep_selection(index)
 
 def wait_release_all():
