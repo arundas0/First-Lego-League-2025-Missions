@@ -289,11 +289,11 @@ def mission_3():
     setup_drive()
     # print("Mission 3")
 
-    drive_cm(41, 10, 10)
-    drive_cm(-8, 30, 15)
-    drive_cm(18.5, 30, 10)
+    drive_cm(41, 20, 20)
+    drive_cm(-8, 10, 15)
+    drive_cm(17.5, 10, 10)
     drive_cm(-4, 30, 10)
-    motor_c.run_until_stalled(-200, then=Stop.BRAKE, duty_limit=35)
+    motor_c.run_until_stalled(-200, then=Stop.BRAKE, duty_limit=50)
     drive_cm(2, 30, 10)
     motor_d.run_until_stalled(-300, then=Stop.BRAKE, duty_limit=50)
     motor_c.run_until_stalled(200, then=Stop.BRAKE, duty_limit=60)
@@ -316,13 +316,12 @@ def mission_4():
     run_motor_for_degrees(motor_d, 180, 1000)
 
     # drop_arm(port.C , 150) then 200 fast
-    run_motor_for_degrees(motor_c, 150, 300)
-    wait(1000)
-    run_motor_for_degrees(motor_c, 200, 1000)
-    #motor_c.run_until_stalled(200, then=Stop.BRAKE, duty_limit=60)
+    #run_motor_for_degrees(motor_c, 300, 300)
+    #run_motor_for_degrees(motor_c, 200, 1000)
+    motor_c.run_until_stalled(200, then=Stop.BRAKE, duty_limit=60)
 
     # lift_arm(port.C , -300 slow)
-    run_motor_for_degrees(motor_c, -300, 500)
+    motor_c.run_until_stalled(-200, then=Stop.BRAKE, duty_limit=80)
 
     drive_cm(-22, 17, 500)
     gyro_turn(-120, mode="fast")
