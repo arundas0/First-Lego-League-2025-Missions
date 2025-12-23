@@ -156,7 +156,6 @@ def gyro_turn(target_angle: float,
         right_motor.stop()
         wait(30)
 
-
     left_motor.stop()
     right_motor.stop()
 
