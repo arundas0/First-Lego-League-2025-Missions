@@ -109,8 +109,7 @@ def gyro_turn(target_angle: float,
         bulk = target_angle - (settle_margin if target_angle > 0 else -settle_margin)
 
     robot.turn(bulk)
-    h = hub.imu.heading()
-    print(f"Post-bulkturn heading: {h:.2f}° (target {target_angle}°)")
+
     # --- Phase B: IMU settle (fine correction) ---
     sw = StopWatch()
     sw.reset()
@@ -226,14 +225,15 @@ def mission_0():
     wait(200)
 
     drive_cm(15, 30, 50)
-    gyro_turn(-12, mode="medium")
+    # gyro_turn(-12)
+    robot.turn(-12)
     wait(200)
 
-    drive_cm(55, 100, 40)
+    drive_cm(55, 30, 50)
     wait(200)
-    gyro_turn(55, mode="medium")
+    gyro_turn(55, mode="slow")
     wait(200)
-    drive_cm(10, 30, 30)
+    drive_cm(7, 30, 20)
 
     run_motor_for_degrees(motor_d, -1000, 1000) # SPIKE: move_sidearm_mission9(port.D, -1000, 1000, 500)
     run_motor_for_degrees(motor_c, 50, 500) # SPIKE: move_sidearm_mission9(port.C, 100, 1000, 500)
@@ -251,7 +251,7 @@ def mission_1():
     wait(200)
 
     drive_cm(12, 30, 50)
-    gyro_turn(-45, mode="medium")
+    gyro_turn(-45, mode="fast")
     run_motor_for_degrees(motor_c, 150, 300)     # move_sidearm_mission9(port.C, 150, 720, 1000)
     drive_cm(39, 30, 50)
 
@@ -261,25 +261,33 @@ def mission_1():
     drive_cm_stall(-15, 30, 20)
     drive_cm_stall(10, 30, 10)
     run_motor_for_degrees(motor_d, 600, 1000)     # move_sidearm_mission9(port.D, 720, 360, 1000)
-    drive_cm(-30, 30, 100)
+    drive_cm(-35, 30, 100)
+
 def mission_2():
     setup_drive()
     # print("Mission 2")
 
+    hub.imu.reset_heading(0)
     wait(200)
 
     drive_cm(37, 30, 50)
 
+    # SPIKE had a complex stall-detect version; here is a simpler "repeat wiggle" version:
     for _ in range(3):  # repetitions=3
         run_motor_for_degrees(motor_c, -180, 750)
         run_motor_for_degrees(motor_c, 180, 750)
 
-    drive_cm(-15.5, 30, 50)
-
-    gyro_turn(-90, mode="medium")
-    drive_cm(50, 100, 50)
+    drive_cm(-35, 30, 50)
 
 def mission_3():
+    setup_drive()
+
+    hub.imu.reset_heading(0)
+    drive_cm(200, 30, 50)
+
+
+
+def mission_4():
     # This matches your “Challenge H 90” style (your Mission 3 file)
     setup_drive()
     # print("Mission 3")
@@ -297,9 +305,8 @@ def mission_3():
     #run_motor_for_degrees(motor_c, 600, speed: 50, accel: 100, stop=Stop.HOLD):
      
     
-def mission_4():
+def mission_5():
     setup_drive()
-    # print("Mission 4")
 
 
     drive_cm(69, 30, 50)
@@ -323,8 +330,14 @@ def mission_4():
 
     drive_cm(61, 30, 500)
 
-def mission_5():
-    # print("Mission 5#")
+
+def mission_6():
+    setup_drive()
+    drive_cm(50, 100, 50)
+    drive_cm(-50, 30, 50)
+
+
+def mission_7():
     setup_drive()
    
     hub.imu.reset_heading(0)
@@ -343,14 +356,9 @@ def mission_5():
     #run_motor_for_degrees(motor_d, 200, 500)
     gyro_turn(-20, mode="fast")
 
-def mission_6():
-    setup_drive()
-    drive_cm(50, 100, 50)
-    drive_cm(-50, 30, 50)
+
     
-def mission_7():
-    setup_drive()
-    # print("Mission 7")
+
 
 MISSION_COLORS = [
     Color.RED,     # Mission 0
