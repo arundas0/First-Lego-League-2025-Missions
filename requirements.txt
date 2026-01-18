@@ -1,3 +1,9 @@
 pybricks
+pybricksdev  # For deploying code to hub via Bluetooth/USB
+
 # Optional (for running extra tests locally):
 # pytest
+
+# Xbox Controller Remote Control:
+pygame  # For Xbox controller input
+# Note: Xbox controller must be connected via USB or Bluetooth
