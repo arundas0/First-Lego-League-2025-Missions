@@ -23,6 +23,8 @@ robot = DriveBase(left_motor, right_motor, WHEEL_DIAMETER_MM, AXLE_TRACK_MM)
 motor_c = Motor(Port.C)
 motor_d = Motor(Port.D)
 
+watch = StopWatch()
+
 # -----------------------------
 # Shared helpers
 # -----------------------------
@@ -56,6 +58,62 @@ def setup_drive(back=1):
     # “Default-ish” settings; missions override per move
     robot.settings(straight_speed=300, straight_acceleration=300)
     beep_ok()
+
+def gyro_turn_phase1(target_angle: float, mode: str = "medium", settle_tol: float = 0.25, settle_timeout_ms: int = 1500):
+    """
+    Improved Hybrid Turn for Pybricks 2025.
+    target_angle: Degrees to turn from current heading (+ CW, - CCW).
+    """
+    # Speed profiles based on 2025 competition standards
+    turn_rates = {"slow": 80, "medium": 150, "fast": 220}
+    turn_rate = turn_rates.get(mode, 150)
+
+    # Safety and Initialization
+    emergency_stop_check()
+    hub.imu.reset_heading(0)
+    wait(100) # Required for IMU stabilization
+
+    # --- Phase A: Bulk Turn ---
+    # Configure DriveBase and execute the majority of the turn
+    robot.settings(turn_rate=turn_rate)
+    robot.turn(target_angle)
+
+    # --- Phase B: Accurate Settle Loop ---
+    sw = StopWatch()
+    current_h = hub.imu.heading()
+    while sw.time() < settle_timeout_ms:
+        emergency_stop_check()
+       
+        # Calculate Error with Shortest Path Logic
+        # Normalizes to range (-180, 180) to handle wrap-around issues
+        current_h = hub.imu.heading()
+        #err = (target_angle - current_h + 180) % 360 - 180
+        err = target_angle - current_h
+        # print("Target :",target_angle, "Head Angle : ",current_h, "Error :",err)
+        # Exit if within tolerance and the robot has physically stopped vibrating
+        if abs(err) <= settle_tol:
+            print("Found the optimal result")
+            break
+        if abs(err) < 1 :
+            # Fine-Adjustment Pulses
+            # Uses lower speed and active braking for precision
+            nudge_speed = 45
+            direction = 1 if err > 0 else -1
+           
+            left_motor.run(direction * nudge_speed)
+            right_motor.run(-direction * nudge_speed)
+            wait(10)      # Very short pulse
+            left_motor.brake()
+            right_motor.brake()
+            wait(40)      # Settling time for IMU reading
+        else:
+            robot.turn(err)
+            wait(40)
+
+    # Ensure motors are fully stopped at the end
+    robot.stop()
+    # print the final result
+    print("Target:",target_angle, "Head Angle : ",current_h, "Error :",err)
 
 def gyro_turn(target_angle: float,
               mode: str = "medium",
@@ -234,64 +292,98 @@ def run_motor_for_degrees(m: Motor, degrees: int, speed: int, accel: int = 1000,
 # Converted from your SPIKE code
 # -----------------------------
 def mission_0():
-    setup_drive()
+    setup_drive(1)
     # print("Mission 0")
+   
+    #hub.imu.reset_heading(0)
+   # wait(200)
 
-    hub.imu.reset_heading(0)
-    wait(200)
-
-    drive_cm(15, 30, 50)
+    drive_cm(25, 30, 50)
     # gyro_turn(-12)
-    robot.turn(-12)
-    wait(200)
+    #wait(200)
+    gyro_turn_phase1(-25,settle_timeout_ms=1500)
+    #wait(200)
 
-    drive_cm(55, 30, 50)
+    drive_cm(44, 50, 50)
     wait(200)
-    gyro_turn(55, mode="slow")
+    #gyro_turn(55, mode="slow")
+    gyro_turn_phase1(69,mode="slow")
+   
     wait(200)
-    drive_cm(7, 30, 20)
-
+    drive_cm(14, 30, 20)
+   
     run_motor_for_degrees(motor_d, -1000, 1000) # SPIKE: move_sidearm_mission9(port.D, -1000, 1000, 500)
-    run_motor_for_degrees(motor_c, 50, 500) # SPIKE: move_sidearm_mission9(port.C, 100, 1000, 500)
+    run_motor_for_degrees(motor_c, 100, 500) # SPIKE: move_sidearm_mission9(port.C, 100, 1000, 500)
     # print("Turn completed")
-    gyro_turn(-35, mode="medium")
+    drive_cm(-2,30,10)
+    gyro_turn_phase1(-43, mode="medium")
+   
     drive_cm(-60, 100, 500)
-    gyro_turn(-90, mode="fast")
-    drive_cm(-60, 100, 500)
+    # gyro_turn_phase1(-90,mode="fast",settle_timeout_ms=1000)
+    robot.turn(-90)
+    #gyro_turn(-90, mode="fast")
+    drive_cm(-45, 100, 500)
+
+    print("Total motor run time,mission0:", watch.time(), "ms")
+    wait(200)
+
+# def mission_1():
+#     setup_drive(0)
+#     # print("Mission 1")
+   
+#     hub.imu.reset_heading(0)
+#     wait(200)
+
+#     drive_cm(12, 30, 50)
+#     gyro_turn_phase1(-45, mode="fast")
+#     run_motor_for_degrees(motor_c, 150, 300)     # move_sidearm_mission9(port.C, 150, 720, 1000)
+#     drive_cm(39, 30, 50)
+
+#     motor_c.run_until_stalled(-100,Stop.BRAKE,50)    # move_sidearm_mission9(port.C, -120, 100, 100)
+#     run_motor_for_degrees(motor_d, -500, 500)  
+#     run_motor_for_degrees(motor_c, 180, 1000)
+#     drive_cm_stall(-15, 30, 20)
+#     drive_cm_stall(10, 30, 10)
+#     run_motor_for_degrees(motor_d, 600, 1000)     # move_sidearm_mission9(port.D, 720, 360, 1000)
+#     drive_cm(-35, 30, 100)
+#     print("Total motor run time,mission1:", watch.time(), "ms",flush=True)
 
 def mission_1():
-    setup_drive()
+    setup_drive(0)
     # print("Mission 1")
-    
+   
     hub.imu.reset_heading(0)
     wait(200)
 
-    drive_cm(12, 30, 50)
-    gyro_turn(-45, mode="fast")
-    run_motor_for_degrees(motor_c, 150, 300)     # move_sidearm_mission9(port.C, 150, 720, 1000)
-    drive_cm(39, 30, 50)
+    drive_cm(38, 30, 50)
+    # gyro_turn_phase1(-45, mode="fast")
+    #run_motor_for_degrees(motor_c, 150, 300)     # move_sidearm_mission9(port.C, 150, 720, 1000)
+    # drive_cm(39, 30, 50)
 
-    motor_c.run_until_stalled(-100,Stop.BRAKE,50)    # move_sidearm_mission9(port.C, -120, 100, 100)
-    run_motor_for_degrees(motor_d, -500, 500)   
-    run_motor_for_degrees(motor_c, 180, 1000) 
+    motor_c.run_until_stalled(-200,Stop.BRAKE,50)    # move_sidearm_mission9(port.C, -120, 100, 100)
+    run_motor_for_degrees(motor_d, -500, 500)  
+    run_motor_for_degrees(motor_c, 180, 1000)
+
     drive_cm_stall(-15, 30, 20)
     drive_cm_stall(10, 30, 10)
     run_motor_for_degrees(motor_d, 600, 1000)     # move_sidearm_mission9(port.D, 720, 360, 1000)
     drive_cm(-35, 30, 100)
+    print("Total motor run time for mission1:", watch.time(), "ms")
+
 
 def mission_2():
     setup_drive(0)
 
     # SPIKE had a complex stall-detect version; here is a simpler "repeat wiggle" version:
     for _ in range(3):  # repetitions=3
-        run_motor_for_degrees(motor_c, -180, 270)
-        run_motor_for_degrees(motor_c, 180, 270)
+        run_motor_for_degrees(motor_d, 180, 270)
+        run_motor_for_degrees(motor_d, -180, 270)
+    print("Total motor run time,mission2:", watch.time(), "ms")
 
 def mission_3():
     setup_drive(0)
-
-    hub.imu.reset_heading(0)
-    drive_cm(200, 70, 50)
+    drive_cm(200, 40, 100)
+    print("Total motor run time,mission3:", watch.time(), "ms")
 
 def mission_4(): #Adi Mission - Get the broom Start from left edge of E
     setup_drive()
@@ -303,18 +395,20 @@ def mission_4(): #Adi Mission - Get the broom Start from left edge of E
 
     run_motor_for_degrees(motor_d, 180, 1000) #raise garden bed
     motor_c.run_until_stalled(200, then=Stop.BRAKE, duty_limit=60) #drop net
-    motor_c.run_until_stalled(-200, then=Stop.BRAKE, duty_limit=80) #raise net to get broom 
-
+    #motor_c.run_until_stalled(-200, then=Stop.BRAKE, duty_limit=80) #raise net to get broom 
+    run_motor_for_degrees(motor_c, -150, 250) #raise brush
+ 
     drive_cm(-22, 17, 500) #back away from garden bed
-    gyro_turn(-120, mode="fast") #turn towards home
+    gyro_turn(-110, mode="fast") #turn towards home
 
-    drive_cm(61, 30, 500) #drive towards home
+    drive_cm(61, 100, 500) #drive towards home
+    print("Total motor run time,mission4:", watch.time(), "ms")
 
 def mission_5():
-    setup_drive()
+    setup_drive(0)
 
-    drive_cm(41, 20, 20)
-    drive_cm(-11, 10, 15)
+    drive_cm(42, 20, 20)
+    drive_cm(-12, 10, 15)
     drive_cm(19.5, 30, 30)
     motor_c.run_until_stalled(-300, then=Stop.BRAKE, duty_limit=50) #drop gear mechanism
     drive_cm(2, 30, 10)
@@ -323,7 +417,7 @@ def mission_5():
     drive_cm(-50, 30, 50) #back to home
  
 def mission_6(): #Deposit Stuff
-    setup_drive()
+    setup_drive(0)
     drive_cm(50, 100, 50) #drop stuff in deposit zone
     drive_cm(-50, 30, 50) #back to home
 
@@ -335,11 +429,13 @@ def mission_7(): #Raise Hell
     wait(100)
 
     drive_cm(79, 30, 50) #move forward to wall
-    gyro_turn(90)
+    #gyro_turn(90)
+    gyro_turn_phase1(90,settle_timeout_ms=1500)
     motor_c.run_until_stalled(600, then=Stop.BRAKE, duty_limit=35) #lower arm trolley
     drive_cm(13, 30, 50) 
     run_motor_for_degrees(motor_c, -400, 300) #raise arm trolley
-    gyro_turn(45) #turn towards dinaosaur fossil
+    #gyro_turn(45) #turn towards dinaosaur fossil
+    gyro_turn_phase1(45,settle_timeout_ms=1500)
     motor_d.run_until_stalled(-600, then=Stop.BRAKE, duty_limit=35) #lower arm to hit fossil
     drive_cm(18, 30, 50)
 
@@ -417,7 +513,7 @@ def main():
             hub.speaker.beep(1000, 200)
             hub.light.on(Color.WHITE)   # running indicator
             wait(200)
-
+            watch.reset()
             try:
                 fn()
                 hub.speaker.beep(600, 150)  # done
