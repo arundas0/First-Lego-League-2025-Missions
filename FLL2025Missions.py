@@ -281,10 +281,10 @@ def drive_cm_stall(distance_cm: float,
 
         wait(100)
 
-def run_motor_for_degrees(m: Motor, degrees: int, speed: int, accel: int = 1000, stop=Stop.HOLD):
+def run_motor_for_degrees(m: Motor, degrees: int, speed: int, accel: int = 1000, stop=Stop.HOLD , wait: bool = True):
 
     # Note: Motor.run_angle(speed, rotation_angle) is blocking.
-    m.run_angle(speed, degrees, then=stop, wait=True)
+    m.run_angle(speed, degrees, then=stop, wait = wait)
 
 
 # -----------------------------
@@ -428,19 +428,25 @@ def mission_7(): #Raise Hell
     hub.imu.reset_heading(0)
     wait(100)
 
-    drive_cm(79, 30, 50) #move forward to wall
-    #gyro_turn(90)
-    gyro_turn_phase1(90,settle_timeout_ms=1500)
+    drive_cm(80, 30, 50) #move forward to wall
+    gyro_turn(90)
+    #gyro_turn_phase1(90,settle_timeout_ms=1500)
     motor_c.run_until_stalled(600, then=Stop.BRAKE, duty_limit=35) #lower arm trolley
     drive_cm(13, 30, 50) 
     run_motor_for_degrees(motor_c, -400, 300) #raise arm trolley
-    #gyro_turn(45) #turn towards dinaosaur fossil
-    gyro_turn_phase1(45,settle_timeout_ms=1500)
-    motor_d.run_until_stalled(-600, then=Stop.BRAKE, duty_limit=35) #lower arm to hit fossil
-    drive_cm(18, 30, 50)
+    # #gyro_turn(45) #turn towards dinaosaur fossil
+    #drive_cm(1, 30, 50) 
+
+    #motor_d.run_until_stalled(-1000, then=Stop.BRAKE, duty_limit=35) 
+
+    gyro_turn_phase1(44,settle_timeout_ms=1500)
+
+    motor_d.run_until_stalled(-1000, then=Stop.BRAKE, duty_limit=35) #lower arm to hit fossil
+    drive_cm(20, 30, 50)
 
     run_motor_for_degrees(motor_d, 300, 500) #raise arm after hitting fossil
     gyro_turn(-30, mode="medium")
+    print("Total motor run time,mission7:", watch.time(), "ms")
 
 MISSION_COLORS = [
     Color.RED,     # Mission 0
